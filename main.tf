@@ -4,7 +4,7 @@ resource "azurerm_resource_group" "rg1" {
   location = var.loc1
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-resourcegroups"
+    Function    = "prod-resourcegroups"
   }
 }
 
@@ -14,7 +14,7 @@ resource "azurerm_resource_group" "rg2" {
   location = var.loc1
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-resourcegroups"
+    Function    = "prod-resourcegroups"
   }
 }
 #VNETs and Subnets
@@ -27,7 +27,7 @@ resource "azurerm_virtual_network" "region1-vnet1-hub1" {
   dns_servers         = ["10.10.1.4", "168.63.129.16", "8.8.8.8"]
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-network"
+    Function    = "prod-network"
   }
 }
 resource "azurerm_subnet" "region1-vnet1-snet1" {
@@ -63,7 +63,7 @@ resource "azurerm_virtual_network" "region1-vnet2-spoke1" {
   dns_servers         = ["10.10.1.4", "168.63.129.16", "8.8.8.8"]
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-network"
+    Function    = "prod-network"
   }
 }
 resource "azurerm_subnet" "region1-vnet2-snet1" {
@@ -132,7 +132,7 @@ resource "azurerm_network_security_group" "region1-nsg" {
   }
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-security"
+    Function    = "prod-security"
   }
 }
 #NSG Association to all Lab Subnets
@@ -193,7 +193,7 @@ resource "azurerm_key_vault" "kv1" {
   }
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-security"
+    Function    = "prod-security"
   }
 }
 #Create KeyVault VM password
@@ -218,7 +218,7 @@ resource "azurerm_public_ip" "region1-dc01-pip" {
 
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-activedirectory"
+    Function    = "prod-activedirectory"
   }
 }
 #Create NIC and associate the Public IP
@@ -237,7 +237,7 @@ resource "azurerm_network_interface" "region1-dc01-nic" {
 
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-activedirectory"
+    Function    = "prod-activedirectory"
   }
 }
 #Create data disk for NTDS storage
@@ -252,7 +252,7 @@ resource "azurerm_managed_disk" "region1-dc01-data" {
 
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-activedirectory"
+    Function    = "prod-activedirectory"
   }
 }
 #Create Domain Controller VM
@@ -270,7 +270,7 @@ resource "azurerm_windows_virtual_machine" "region1-dc01-vm" {
 
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-activedirectory"
+    Function    = "prod-activedirectory"
   }
 
   os_disk {
@@ -293,29 +293,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "region1-dc01-data" {
   lun                = "10"
   caching            = "None"
 }
-#Run setup script on dc01-vm
-resource "azurerm_virtual_machine_extension" "region1-dc01-basesetup" {
-  name                 = "region1-dc01-basesetup"
-  virtual_machine_id   = azurerm_windows_virtual_machine.region1-dc01-vm.id
-  depends_on           = [azurerm_virtual_machine_data_disk_attachment.region1-dc01-data]
-  publisher            = "Microsoft.Compute"
-  type                 = "CustomScriptExtension"
-  type_handler_version = "1.9"
 
-  protected_settings = <<PROTECTED_SETTINGS
-    {
-      "commandToExecute": "powershell.exe -Command \"./baselab_DCSetup.ps1; exit 0;\""
-    }
-  PROTECTED_SETTINGS
-
-  settings = <<SETTINGS
-    {
-        "fileUris": [
-          "https://raw.githubusercontent.com/jakewalsh90/Terraform-Azure/main/PowerShell/baselab_DCSetup.ps1"
-        ]
-    }
-  SETTINGS
-}
 
 #Azure Firewall Setup
 #Public IP
@@ -328,7 +306,7 @@ resource "azurerm_public_ip" "region1-fw01-pip" {
 
   tags = {
     Environment = var.environment_tag
-    Function    = "lab1-azurefirewall"
+    Function    = "prod-azurefirewall"
   }
 }
 #Firewall Instance
@@ -420,17 +398,23 @@ resource "azurerm_firewall_policy_rule_collection_group" "region1-policy1" {
   }
 }
 
-resource "azurerm_recovery_services_vault" "example" {
-  name                = var.recovery_vault_name
-  location            = var.location
-  resource_group_name = "azure-rg-1"
-  sku                 = "Standard"
+
+resource "azurerm_recovery_services_vault" "my_vault" {
+  name                = "myVault"
+  location            = var.loc1
+  resource_group_name = azurerm_resource_group.rg1.name
+  sku  = "Standard"
+  tags = {
+    Environment = var.environment_tag
+    Function    = "prod-backup"
+}
 }
 
-resource "azurerm_backup_policy_vm" "example" {
+
+resource "azurerm_backup_policy_vm" "backup-policy" {
   name                = var.backup_policy_name
-  resource_group_name = "azure-rg-1"
-  recovery_vault_name = azurerm_recovery_services_vault.example.name
+  resource_group_name = azurerm_resource_group.rg1.name
+  recovery_vault_name = azurerm_recovery_services_vault.my_vault.name
 
   backup {
     frequency = var.backup_frequency
@@ -486,19 +470,6 @@ resource "azurerm_monitor_metric_alert" "Network_alert" {
     azurerm_windows_virtual_machine.region1-dc01-vm,
 
   ]
-}
-
-# Enable Microsoft Sentinel on the Log Analytics Workspace
-resource "azurerm_sentinel_alert_rule_scheduled" "Micro_sentinel" {
-  name                       = "Micro-sentinel"
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.LogAnalytics.id
-  display_name               = "Micro_sentinel Alert Rule"
-  severity                   = "High"
-  query                      = "AzureActivity | where OperationName == 'Create or Update Virtual Machine'"
-  query_frequency            = "PT5M"
-  query_period               = "PT5M"
-  trigger_operator           = "GreaterThan"
-  trigger_threshold          = 0
 }
 
  
