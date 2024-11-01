@@ -17,14 +17,14 @@ resource "azurerm_resource_group" "rg2" {
     Function    = "prod-resourcegroups"
   }
 }
-#VNETs and Subnets
-#Hub VNET and Subnets
+#VNETs / Subnets
+#Hub VNET / Subnets
 resource "azurerm_virtual_network" "region1-vnet1-hub1" {
   name                = var.region1-vnet1-name
   location            = var.loc1
   resource_group_name = azurerm_resource_group.rg1.name
   address_space       = [var.region1-vnet1-address-space]
-  dns_servers         = ["10.10.1.4", "168.63.129.16", "8.8.8.8"]
+  dns_servers         = ["10.0.1.4", "168.63.129.16", "8.8.8.8"]
   tags = {
     Environment = var.environment_tag
     Function    = "prod-network"
@@ -54,13 +54,13 @@ resource "azurerm_subnet" "region1-vnet1-snetfw" {
   virtual_network_name = azurerm_virtual_network.region1-vnet1-hub1.name
   address_prefixes     = [var.region1-vnet1-snetfw-range]
 }
-#Spoke VNET and Subnets 
+#Spoke VNET / Subnets 
 resource "azurerm_virtual_network" "region1-vnet2-spoke1" {
   name                = var.region1-vnet2-name
   location            = var.loc1
   resource_group_name = azurerm_resource_group.rg1.name
   address_space       = [var.region1-vnet2-address-space]
-  dns_servers         = ["10.10.1.4", "168.63.129.16", "8.8.8.8"]
+  dns_servers         = ["10.0.1.4", "168.63.129.16", "8.8.8.8"]
   tags = {
     Environment = var.environment_tag
     Function    = "prod-network"
@@ -156,58 +156,7 @@ resource "azurerm_subnet_network_security_group_association" "vnet2-snet2" {
   subnet_id                 = azurerm_subnet.region1-vnet2-snet2.id
   network_security_group_id = azurerm_network_security_group.region1-nsg.id
 }
-#Create KeyVault ID
-resource "random_id" "kvname" {
-  byte_length = 5
-  prefix      = "keyvault"
-}
-#Keyvault Creation
-data "azurerm_client_config" "current" {}
-resource "azurerm_key_vault" "kv1" {
-  depends_on                  = [azurerm_resource_group.rg2]
-  name                        = random_id.kvname.hex
-  location                    = var.loc1
-  resource_group_name         = var.azure-rg-2
-  enabled_for_disk_encryption = true
-  tenant_id                   = data.azurerm_client_config.current.tenant_id
-  soft_delete_retention_days  = 7
-  purge_protection_enabled    = false
 
-  sku_name = "standard"
-
-  access_policy {
-    tenant_id = data.azurerm_client_config.current.tenant_id
-    object_id = data.azurerm_client_config.current.object_id
-
-    key_permissions = [
-      "Get",
-    ]
-
-    secret_permissions = [
-      "Get", "Backup", "Delete", "List", "Purge", "Recover", "Restore", "Set",
-    ]
-
-    storage_permissions = [
-      "Get",
-    ]
-  }
-  tags = {
-    Environment = var.environment_tag
-    Function    = "prod-security"
-  }
-}
-#Create KeyVault VM password
-resource "random_password" "vmpassword" {
-  length  = 20
-  special = true
-}
-#Create Key Vault Secret
-resource "azurerm_key_vault_secret" "vmpassword" {
-  name         = "vmpassword"
-  value        = random_password.vmpassword.result
-  key_vault_id = azurerm_key_vault.kv1.id
-  depends_on   = [azurerm_key_vault.kv1]
-}
 #Public IP
 resource "azurerm_public_ip" "region1-dc01-pip" {
   name                = "region1-dc01-pip"
@@ -222,8 +171,8 @@ resource "azurerm_public_ip" "region1-dc01-pip" {
   }
 }
 #Create NIC and associate the Public IP
-resource "azurerm_network_interface" "region1-dc01-nic" {
-  name                = "region1-dc01-nic"
+resource "azurerm_network_interface" "prod-dc01-nic" {
+  name                = "prod-dc01-nic"
   location            = var.loc1
   resource_group_name = azurerm_resource_group.rg1.name
 
@@ -232,7 +181,6 @@ resource "azurerm_network_interface" "region1-dc01-nic" {
     name                          = "region1-dc01-ipconfig"
     subnet_id                     = azurerm_subnet.region1-vnet1-snet1.id
     private_ip_address_allocation = "Dynamic"
-    public_ip_address_id          = azurerm_public_ip.region1-dc01-pip.id
   }
 
   tags = {
@@ -241,8 +189,8 @@ resource "azurerm_network_interface" "region1-dc01-nic" {
   }
 }
 #Create data disk for NTDS storage
-resource "azurerm_managed_disk" "region1-dc01-data" {
-  name                 = "region1-dc01-data"
+resource "azurerm_managed_disk" "prod-dc01-data" {
+  name                 = "prod-dc01-data"
   location             = var.loc1
   resource_group_name  = azurerm_resource_group.rg1.name
   storage_account_type = "StandardSSD_LRS"
@@ -256,16 +204,15 @@ resource "azurerm_managed_disk" "region1-dc01-data" {
   }
 }
 #Create Domain Controller VM
-resource "azurerm_windows_virtual_machine" "region1-dc01-vm" {
-  name                = "region1-dc01-vm"
-  depends_on          = [azurerm_key_vault.kv1]
+resource "azurerm_windows_virtual_machine" "prod-dc01-vm" {
+  name                = "prod-dc01-vm"
   resource_group_name = azurerm_resource_group.rg1.name
   location            = var.loc1
   size                = var.vmsize-domaincontroller
-  admin_username      = var.adminusername
-  admin_password      = azurerm_key_vault_secret.vmpassword.value
+  admin_username      = "markadmin"
+  admin_password      = "Marcopollo12"
   network_interface_ids = [
-    azurerm_network_interface.region1-dc01-nic.id,
+    azurerm_network_interface.prod-dc01-nic.id,
   ]
 
   tags = {
@@ -286,190 +233,73 @@ resource "azurerm_windows_virtual_machine" "region1-dc01-vm" {
   }
 }
 #Attach Data Disk to Virtual Machine
-resource "azurerm_virtual_machine_data_disk_attachment" "region1-dc01-data" {
-  managed_disk_id    = azurerm_managed_disk.region1-dc01-data.id
-  depends_on         = [azurerm_windows_virtual_machine.region1-dc01-vm]
-  virtual_machine_id = azurerm_windows_virtual_machine.region1-dc01-vm.id
+resource "azurerm_virtual_machine_data_disk_attachment" "prod-dc01-data" {
+  managed_disk_id    = azurerm_managed_disk.prod-dc01-data.id
+  depends_on         = [azurerm_windows_virtual_machine.prod-dc01-vm]
+  virtual_machine_id = azurerm_windows_virtual_machine.prod-dc01-vm.id
   lun                = "10"
   caching            = "None"
 }
 
 
-#Azure Firewall Setup
-#Public IP
-resource "azurerm_public_ip" "region1-fw01-pip" {
-  name                = "region1-fw01-pip"
+resource "azurerm_virtual_network_gateway" "AzureVNG" {
+  name                = "AzureVNG-vnet-gateway"
+  location            = azurerm_resource_group.rg1.location
   resource_group_name = azurerm_resource_group.rg1.name
-  location            = var.loc1
-  allocation_method   = "Static"
-  sku                 = "Standard"
-
-  tags = {
-    Environment = var.environment_tag
-    Function    = "prod-azurefirewall"
-  }
-}
-#Firewall Instance
-resource "azurerm_firewall" "region1-fw01" {
-  name                = "region1-fw01"
-  location            = var.loc1
-  resource_group_name = azurerm_resource_group.rg1.name
-  sku_tier            = "Premium"
-  sku_name            = "AZFW_VNet"
-  depends_on          = [azurerm_firewall_policy.region1-fw-pol01]
+  type                = "Vpn"
+  vpn_type            = "RouteBased"
+  active_active       = false
+  enable_bgp          = false
+  sku                 = "Basic"
 
   ip_configuration {
-    name                 = "fw-ipconfig"
-    subnet_id            = azurerm_subnet.region1-vnet1-snetfw.id
-    public_ip_address_id = azurerm_public_ip.region1-fw01-pip.id
-  }
-}
-#Classic Rules
-resource "azurerm_firewall_network_rule_collection" "specific-range-rules" {
-  name                = "specific-range-firewall-rules"
-  azure_firewall_name = azurerm_firewall.region1-fw01.name
-  resource_group_name = azurerm_resource_group.rg1.name
-  priority            = 100
-  action              = "Allow"
-  rule {
-    name                  = "specific-range-firewall-rules"
-    source_addresses      = ["10.0.0.0/16"]
-    destination_addresses = [var.region1-gateway-address-space]
-    destination_ports     = ["*"]
-    protocols             = ["Any"]
-  }
-}
-resource "azurerm_firewall_network_rule_collection" "specific-destination-rules2" {
-  name                = "specific-destination-firewall-rules2"
-  azure_firewall_name = azurerm_firewall.region1-fw01.name
-  resource_group_name = azurerm_resource_group.rg1.name
-  priority            = 101
-  action              = "Allow"
-  rule {
-    name                  = "specific-range-firewall-rules"
-    source_addresses      = ["10.0.0.0/16"]
-    destination_addresses = ["10.10.100.1/32"]
-    destination_ports     = ["3389"]
-    protocols             = ["TCP"]
-  }
-}
-#Firewall Policy
-resource "azurerm_firewall_policy" "region1-fw-pol01" {
-  name                = "region1-firewall-policy01"
-  resource_group_name = azurerm_resource_group.rg1.name
-  location            = var.loc1
-}
-# Firewall Policy Rules
-resource "azurerm_firewall_policy_rule_collection_group" "region1-policy1" {
-  name               = "region1-policy1"
-  firewall_policy_id = azurerm_firewall_policy.region1-fw-pol01.id
-  priority           = 100
-
-  application_rule_collection {
-    name     = "blocked_websites1"
-    priority = 500
-    action   = "Deny"
-    rule {
-      name = "dodgy_website"
-      protocols {
-        type = "Http"
-        port = 80
-      }
-      protocols {
-        type = "Https"
-        port = 443
-      }
-      source_addresses  = ["*"]
-      destination_fqdns = ["teesside.ac.uk"]
-    }
-  }
-
-  network_rule_collection {
-    name     = "network_rules1"
-    priority = 400
-    action   = "Allow"
-    rule {
-      name                  = "network_rule_collection1_rule1"
-      protocols             = ["TCP", "UDP"]
-      source_addresses      = ["*"]
-      destination_addresses = ["192.168.1.1", "192.168.1.2"]
-      destination_ports     = ["80", "8000-8080"]
-    }
-  }
-}
-
-
-resource "azurerm_recovery_services_vault" "my_vault" {
-  name                = "myVault"
-  location            = var.loc1
-  resource_group_name = azurerm_resource_group.rg1.name
-  sku  = "Standard"
-  tags = {
-    Environment = var.environment_tag
-    Function    = "prod-backup"
-}
-}
-
-
-resource "azurerm_backup_policy_vm" "backup-policy" {
-  name                = var.backup_policy_name
-  resource_group_name = azurerm_resource_group.rg1.name
-  recovery_vault_name = azurerm_recovery_services_vault.my_vault.name
-
-  backup {
-    frequency = var.backup_frequency
-    time      = var.backup_time
-  }
-
-  retention_daily {
-    count = var.retention_days
-  }
-}
-
-resource "azurerm_log_analytics_workspace" "LogAnalytics" {
-  name                = var.log_analytics_workspace_name
-  location            = var.loc1
-  resource_group_name = azurerm_resource_group.rg1.name
-  sku                 = "PerGB2018"
-}
-
-resource "azurerm_monitor_action_group" "email_alert" {
-  name                = "email-alert"
-  resource_group_name = azurerm_resource_group.rg1.name
-  short_name          = "email-alert"
-  enabled             = true
-
-  email_receiver {
-    name                    = "sendtoAdmin"
-    email_address           = "marknwaghodoh@itsmarcopollo.onmicrosoft.com"
-    use_common_alert_schema = true
-  }
-
-}
-
-resource "azurerm_monitor_metric_alert" "Network_alert" {
-  name                = "Network-alert"
-  resource_group_name = azurerm_resource_group.rg1.name
-  scopes              = [azurerm_windows_virtual_machine.region1-dc01-vm.id]
-  description         = "The alert will be sent if the Network Out bytes exceeds 60 bytes"
-
-  criteria {
-    metric_namespace = "Microsoft.Compute/virtualMachines"
-    metric_name      = "Network Out Total"
-    aggregation      = "Total"
-    operator         = "GreaterThan"
-    threshold        = 60
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.email_alert.id
+    name                          = "vnetGatewayConfig"
+    public_ip_address_id          = azurerm_public_ip.Marknet.id
+    private_ip_address_allocation = "Dynamic"
+    subnet_id                     = azurerm_subnet.gateway_subnet.id
   }
 
   depends_on = [
-    azurerm_monitor_action_group.email_alert,
-    azurerm_windows_virtual_machine.region1-dc01-vm,
-
+    azurerm_virtual_network.Gatewayvnn
   ]
 }
 
- 
+resource "azurerm_public_ip" "Marknet" {
+  name                = "Marknet-pip"
+  location            = azurerm_resource_group.rg1.location
+  resource_group_name = azurerm_resource_group.rg1.name
+  allocation_method   = "Dynamic"
+  sku                 = "Basic"
+}
+
+resource "azurerm_virtual_network" "Gatewayvnn" {
+  name                = "region1-vnet1-name"
+  address_space       = ["10.0.0.0/16"]
+  location            = azurerm_resource_group.rg1.location
+  resource_group_name = azurerm_resource_group.rg1.name
+}
+
+resource "azurerm_subnet" "gateway_subnet" {
+  name                 = "GatewaySubnet"
+  resource_group_name  = azurerm_resource_group.rg1.name
+  virtual_network_name = azurerm_virtual_network.Gatewayvnn.name
+  address_prefixes     = ["10.0.1.0/24"]
+}
+
+resource "azurerm_local_network_gateway" "AzurelNG" {
+  name                = var.local_network_gateway_name
+  location            = azurerm_resource_group.rg1.location
+  resource_group_name = azurerm_resource_group.rg1.name
+  gateway_address     = var.gateway_address
+  address_space       = var.address_space
+}
+
+resource "azurerm_virtual_network_gateway_connection" "MarkConn" {
+  name                = "MarkConn-connection"
+  location            = azurerm_resource_group.rg1.location
+  resource_group_name = azurerm_resource_group.rg1.name
+  virtual_network_gateway_id = azurerm_virtual_network_gateway.AzureVNG.id
+  local_network_gateway_id   = azurerm_local_network_gateway.AzurelNG.id
+  type                = "IPsec"
+  shared_key          = "Marcopollo12"
+}
