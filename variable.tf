@@ -133,3 +133,18 @@ variable "log_analytics_workspace_name" {
   description = "The name of the Log Analytics Workspace."
   type        = string
 }
+
+variable "local_network_gateway_name" {
+  description = "The name of the local network gateway"
+  type        = string
+}
+
+variable "gateway_address" {
+  description = "The IP address of the local network gateway"
+  type        = string
+}
+
+variable "address_space" {
+  description = "The address space of the local network gateway"
+  type        = list(string)
+}
